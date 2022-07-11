@@ -29,7 +29,7 @@ describe('Citizen', function () {
        
     })
 
-    it('Should BE DEPLOYED', async function () {
+    it('Should BE joinRoom', async function () {
         await this.battle.createRoom()
        
         console.log(await this.battle.joinRoom(2))

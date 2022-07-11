@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
 
+
 import '@openzeppelin/contracts/utils/Strings.sol';
 
 // Import this file to use console.log
@@ -22,6 +23,8 @@ contract BattleShips {
         bytes[] actionShip;
         bytes[] actionBoat;
         bool isStart;
+        uint8 lastMoveBoat;
+        uint8 lastMoveShip;
     }
 
 
@@ -29,7 +32,7 @@ contract BattleShips {
 
     mapping(uint256 => Match) public matches;
 
-    function createRoom()public returns(uint256){
+    function createRoom()public{
         Match storage session = matches[roomId];
         
         session.ship = msg.sender;
@@ -38,9 +41,13 @@ contract BattleShips {
         session.result = ResultBattle.PENDING;
         session.roundNumber = 0;
         session.isStart = false;
+        session.lastMoveBoat = 4;
+        session.lastMoveShip = 4;
+
+        emit RoomCreated(roomId);
 
         roomId++;    
-        return roomId - 1;
+
     }
 
     function joinRoom(uint256 _roomId) public {
@@ -73,29 +80,29 @@ contract BattleShips {
         
     }
 
-    function confirmMove(uint256 _roomId, bool[] memory confirmParams )public{
+    function confirmMove(uint256 _roomId, string[] memory confirmParams )public{
         Match storage session = matches[_roomId];
 
         require(session.ship != address(0), "Incorrect room ID");
         require(msg.sender == session.boat || msg.sender == session.ship, "Incorrect room ID");
         require(confirmParams.length == 3, "Invalid confirm params");
 
-        uint8 validActionNumberBoat;
-        uint8 validActionNumberShip;
-
-        bool isValidActionNumberBoat;
-        bool isValidActionNumberShip;
+    
 
         if(session.boat == msg.sender){
 
-            for(uint8 i; i < session.actionBoat.length; i++){
+            for(uint8 i; i < confirmParams.length; i++){
                 checkParamsVerification(session.actionBoat[i], concatParams(i, _roomId, confirmParams[i]), msg.sender );
              }
 
             for(uint8 i; i < session.actionBoat.length; i++){
-                if(confirmParams[i]){
-                    validActionNumberBoat = i;
-                    isValidActionNumberBoat = true;
+
+                bytes memory conPar = bytes(confirmParams[i]);
+                
+                if(conPar[conPar.length-1] == 0x54 ){
+                    
+                    session.lastMoveBoat = i;
+                    
                 }
              }    
         }else{
@@ -104,15 +111,18 @@ contract BattleShips {
              }
 
             for(uint8 i; i < session.actionShip.length; i++){
-                if(confirmParams[i]){
-                    validActionNumberShip = i;
-                    isValidActionNumberShip = true;
+                bytes memory conPar = bytes(confirmParams[i]);
+
+                if(conPar[conPar.length-1] == 0x54 ){
+                    
+                    session.lastMoveShip = i;
+                    
                 }
             }
         }
 
-    if(isValidActionNumberBoat && isValidActionNumberShip){
-            nextRound(_roomId, validActionNumberBoat, validActionNumberShip);
+    if(session.lastMoveBoat != 4 && session.lastMoveShip != 4){
+            nextRound(_roomId, session.lastMoveBoat, session.lastMoveShip);
         }
        
     }
@@ -136,7 +146,7 @@ contract BattleShips {
             
         }
 
-        if (session.roundNumber % 2 == 0) { // стреляла лодка
+        if (session.roundNumber % 2 == 0) { 
             session.healthShip--;
         } else {
             session.healthBoat--;
@@ -206,8 +216,8 @@ contract BattleShips {
 	function concatParams(
 		uint256 _action,
 		uint256 _roomId,
-		bool _stateAction
-	) public pure returns (string memory) {
+		string memory _stateAction
+	) private pure returns (string memory) {
 		return
 			string(
 				abi.encodePacked(
@@ -219,6 +229,7 @@ contract BattleShips {
 	}
 
     /*----------------------------------------EVENTS---------------------------------------------------------*/
+    event RoomCreated(uint256 _roomId );
     event MatchWasStarted(uint256 _roomId, uint16 roundNumber);
     event MatchWasEnded(uint256 _roomId, uint8 healthShip, uint8 healthBoat, uint16 roundNumber);
     event RoundWasEnded(uint256 _roomId, uint8 shipAction, uint8 boatAction, uint8 healthShip, uint8 healthBoat, uint16 roundNumber);
