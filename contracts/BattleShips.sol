@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
 
-
 import '@openzeppelin/contracts/utils/Strings.sol';
 
 // Import this file to use console.log
-enum ResultBattle {
-    SHIP_WIN,
-    BOAT_WIN,
-    PENDING
-}
+
 
 contract BattleShips {
     
@@ -18,10 +13,11 @@ contract BattleShips {
         address boat; 
         uint8 healthShip;
         uint8 healthBoat;
-        ResultBattle result; 
         uint16 roundNumber;
         bytes[] actionShip;
         bytes[] actionBoat;
+        bool[3] destroyedPartsShip;
+        bool[3] destroyedPartsBoat;
         bool isStart;
         uint8 lastMoveBoat;
         uint8 lastMoveShip;
@@ -38,11 +34,12 @@ contract BattleShips {
         session.ship = msg.sender;
         session.healthShip = 3;
         session.healthBoat = 3;
-        session.result = ResultBattle.PENDING;
         session.roundNumber = 0;
         session.isStart = false;
         session.lastMoveBoat = 4;
         session.lastMoveShip = 4;
+        session.destroyedPartsShip = [false, false, false];
+        session.destroyedPartsBoat = [false, false, false];
 
         emit RoomCreated(roomId);
 
@@ -76,11 +73,11 @@ contract BattleShips {
         }else{
             revert("Move already set! Wait next round");
         }
-    
+        emit Moved(_roomId);
         
     }
 
-    function confirmMove(uint256 _roomId, string[] memory confirmParams )public{
+    function confirmMove(uint256 _roomId, string[3] memory confirmParams )public{
         Match storage session = matches[_roomId];
 
         require(session.ship != address(0), "Incorrect room ID");
@@ -92,7 +89,7 @@ contract BattleShips {
         if(session.boat == msg.sender){
 
             for(uint8 i; i < confirmParams.length; i++){
-                checkParamsVerification(session.actionBoat[i], concatParams(i, _roomId, confirmParams[i]), msg.sender );
+                checkParamsVerification(session.actionBoat[i], confirmParams[i], msg.sender );
              }
 
             for(uint8 i; i < session.actionBoat.length; i++){
@@ -100,14 +97,12 @@ contract BattleShips {
                 bytes memory conPar = bytes(confirmParams[i]);
                 
                 if(conPar[conPar.length-1] == 0x54 ){
-                    
                     session.lastMoveBoat = i;
-                    
                 }
              }    
         }else{
             for(uint8 i; i < session.actionShip.length; i++){
-                checkParamsVerification(session.actionShip[i], concatParams(i, _roomId, confirmParams[i]), msg.sender );
+                checkParamsVerification(session.actionShip[i], confirmParams[i], msg.sender );
              }
 
             for(uint8 i; i < session.actionShip.length; i++){
@@ -116,12 +111,12 @@ contract BattleShips {
                 if(conPar[conPar.length-1] == 0x54 ){
                     
                     session.lastMoveShip = i;
-                    
                 }
             }
         }
 
     if(session.lastMoveBoat != 4 && session.lastMoveShip != 4){
+            
             nextRound(_roomId, session.lastMoveBoat, session.lastMoveShip);
         }
        
@@ -129,6 +124,7 @@ contract BattleShips {
 
     function nextRound(uint256 _roomId, uint8 validActionNumberBoat, uint8 validActionNumberShip) private {
         Match storage session = matches[_roomId];
+        bytes[] memory clearAction;
 
         if(validActionNumberBoat == validActionNumberShip){
             session.roundNumber++;
@@ -142,20 +138,29 @@ contract BattleShips {
                 session.roundNumber
             );
 
+            session.actionBoat = clearAction;
+            session.actionShip = clearAction;
+            session.lastMoveBoat = 4;
+            session.lastMoveShip = 4;
+
             return;
             
         }
-
+        
         if (session.roundNumber % 2 == 0) { 
             session.healthShip--;
+            session.destroyedPartsShip[validActionNumberBoat] = true;
+            
         } else {
             session.healthBoat--;
+            session.destroyedPartsBoat[validActionNumberShip] = true;
         }
 
         session.roundNumber++;
 
          if (session.healthBoat == 0 || session.healthShip == 0) {
             emit MatchWasEnded( _roomId, session.healthShip, session.healthBoat, session.roundNumber);
+            session.isStart = false;
         } else {
             emit RoundWasEnded(
                 _roomId,
@@ -165,10 +170,19 @@ contract BattleShips {
                 session.healthBoat,
                 session.roundNumber
             );
+
         }
-        
+            session.actionBoat = clearAction;
+            session.actionShip = clearAction;
+            session.lastMoveBoat = 4;
+            session.lastMoveShip = 4;
     }
 
+    function getDestroyedParts(uint256 _roomId)public view returns(bool[3][2] memory){
+        Match storage session = matches[_roomId];
+        
+        return [session.destroyedPartsShip, session.destroyedPartsBoat];
+    }
 
     function checkParamsVerification(bytes memory _signature, string memory _concatenatedParams, address publicKey) public pure {
 		(bytes32 r, bytes32 s, uint8 v) = splitSignature(_signature);
@@ -176,7 +190,7 @@ contract BattleShips {
 	}
 
 	function splitSignature(bytes memory _signature)
-		public
+		private
 		pure
 		returns (
 			bytes32 r,
@@ -197,7 +211,7 @@ contract BattleShips {
 		uint8 _v,
 		bytes32 _r,
 		bytes32 _s
-	) public pure returns (address) {
+	) private pure returns (address) {
 		return
 			ecrecover(
 				keccak256(
@@ -230,6 +244,7 @@ contract BattleShips {
 
     /*----------------------------------------EVENTS---------------------------------------------------------*/
     event RoomCreated(uint256 _roomId );
+    event Moved(uint256 _roomId);
     event MatchWasStarted(uint256 _roomId, uint16 roundNumber);
     event MatchWasEnded(uint256 _roomId, uint8 healthShip, uint8 healthBoat, uint16 roundNumber);
     event RoundWasEnded(uint256 _roomId, uint8 shipAction, uint8 boatAction, uint8 healthShip, uint8 healthBoat, uint16 roundNumber);
